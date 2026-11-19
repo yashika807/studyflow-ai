@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildAttempt, toTopicList, WEAK_THRESHOLD } from '../utils/analytics.js';
+import { buildAttempt, formatDuration, toTopicList, WEAK_THRESHOLD } from '../utils/analytics.js';
+import Icon from './Icon.jsx';
 import TopicBars from './TopicBars.jsx';
+import ScoreRing from './ScoreRing.jsx';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
+const SECONDS_PER_QUESTION = 30;
+const TIMED_OUT = -1; // value of `selected` when the countdown reaches zero
 
 export default function Quiz({ material, onFinish, onRegenerate }) {
   const questions = material.quiz;
@@ -15,11 +19,30 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
   const [answers, setAnswers] = useState([]);
   const [attempt, setAttempt] = useState(null);
 
+  const [timed, setTimed] = useState(true); // timed mode switch on the intro screen
+  const [timeLeft, setTimeLeft] = useState(SECONDS_PER_QUESTION);
+  const startedAt = useRef(0);
+
+  const answered = selected !== null;
+
+  // Countdown: ticks once per second while a question is open, and locks it at 0.
+  useEffect(() => {
+    if (phase !== 'running' || !timed || answered) return;
+    if (timeLeft <= 0) {
+      setSelected(TIMED_OUT);
+      return;
+    }
+    const id = setTimeout(() => setTimeLeft((t) => t - 1), 1000);
+    return () => clearTimeout(id);
+  }, [phase, timed, answered, timeLeft]);
+
   const start = () => {
     setIndex(0);
     setSelected(null);
     setAnswers([]);
     setAttempt(null);
+    setTimeLeft(SECONDS_PER_QUESTION);
+    startedAt.current = Date.now();
     setPhase('running');
   };
 
@@ -28,14 +51,17 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
   };
 
   const next = () => {
-    const updated = [...answers, selected];
+    const updated = [...answers, selected === TIMED_OUT ? null : selected];
     if (index + 1 < questions.length) {
       setAnswers(updated);
       setIndex(index + 1);
       setSelected(null);
+      setTimeLeft(SECONDS_PER_QUESTION);
       return;
     }
-    const result = buildAttempt(questions, updated);
+    const seconds = Math.round((Date.now() - startedAt.current) / 1000);
+    const result = buildAttempt(questions, updated, seconds);
+    setAnswers(updated);
     onFinish(result); // saves the attempt
     setAttempt(result);
     setPhase('result');
@@ -57,9 +83,18 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
             </span>
           ))}
         </div>
+
+        <label className="toggle">
+          <input type="checkbox" checked={timed} onChange={(e) => setTimed(e.target.checked)} />
+          <span>
+            <strong>Timed mode</strong> · {SECONDS_PER_QUESTION} seconds per question
+          </span>
+        </label>
+
         {lastAttempt && (
           <p className="muted">
-            Last score: <strong>{lastAttempt.percent}%</strong> ({lastAttempt.score}/{lastAttempt.total}) · {material.attempts.length} attempt
+            Last score: <strong>{lastAttempt.percent}%</strong> ({lastAttempt.score}/{lastAttempt.total})
+            {lastAttempt.seconds != null && <> in {formatDuration(lastAttempt.seconds)}</>} · {material.attempts.length} attempt
             {material.attempts.length > 1 ? 's' : ''}
           </p>
         )}
@@ -82,18 +117,21 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
     const tone = attempt.percent >= 80 ? 'good' : attempt.percent >= WEAK_THRESHOLD ? 'ok' : 'low';
     const message =
       tone === 'good' ? 'Great work! You understand this material well.' : tone === 'ok' ? 'Good effort — a little revision will help.' : 'Keep going — focus on the weak topics below.';
+    const unanswered = answers.filter((a) => a === null).length;
 
     return (
       <div className="card">
         <div className="result-head">
-          <div className={`score-ring ${tone}`}>
-            <span>{attempt.percent}%</span>
-          </div>
+          <ScoreRing percent={attempt.percent} tone={tone} />
           <div>
             <h3>
               You scored {attempt.score} / {attempt.total}
             </h3>
             <p className="muted">{message}</p>
+            <p className="muted small result-meta">
+              <Icon name="clock" size={14} /> Time taken: {formatDuration(attempt.seconds)}
+              {unanswered > 0 && ` · ${unanswered} unanswered (time ran out)`}
+            </p>
           </div>
         </div>
 
@@ -126,7 +164,8 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
                 </p>
                 {!right && (
                   <p className="muted">
-                    Your answer: {q.options[answers[i]]} · Correct: <strong>{q.options[q.answerIndex]}</strong>
+                    Your answer: {answers[i] === null ? <em>not answered (time ran out)</em> : q.options[answers[i]]} · Correct:{' '}
+                    <strong>{q.options[q.answerIndex]}</strong>
                   </p>
                 )}
                 <p className="muted small">{q.explanation}</p>
@@ -149,7 +188,8 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
 
   // ---------- running ----------
   const q = questions[index];
-  const answered = selected !== null;
+  const timedOut = selected === TIMED_OUT;
+  const timerTone = timeLeft <= 5 ? 'danger' : timeLeft <= 10 ? 'warn' : '';
 
   return (
     <div className="card">
@@ -162,7 +202,20 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
         </span>
       </div>
 
-      <span className="chip">{q.topic}</span>
+      <div className="quiz-top">
+        <span className="chip">{q.topic}</span>
+        {timed && (
+          <span className={`timer ${timerTone}`} role="timer" aria-label={`${timeLeft} seconds left`}>
+            <Icon name="clock" size={15} /> {formatDuration(timeLeft)}
+          </span>
+        )}
+      </div>
+      {timed && (
+        <div className={`timer-bar ${timerTone}`}>
+          <div style={{ width: `${(timeLeft / SECONDS_PER_QUESTION) * 100}%` }} />
+        </div>
+      )}
+
       <h3 className="question">{q.question}</h3>
 
       <div className="options">
@@ -171,7 +224,7 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
           if (answered && i === q.answerIndex) state = 'correct';
           else if (answered && i === selected) state = 'incorrect';
           return (
-            <button key={i} className={`option ${state}`} onClick={() => choose(i)} disabled={answered && state === '' }>
+            <button key={i} className={`option ${state}`} onClick={() => choose(i)} disabled={answered && state === ''}>
               <span className="option-letter">{LETTERS[i]}</span>
               <span>{opt}</span>
             </button>
@@ -182,7 +235,7 @@ export default function Quiz({ material, onFinish, onRegenerate }) {
       {answered && (
         <div className={`alert ${selected === q.answerIndex ? 'alert-success' : 'alert-error'}`}>
           <span>
-            <strong>{selected === q.answerIndex ? 'Correct!' : 'Not quite.'}</strong> {q.explanation}
+            <strong>{selected === q.answerIndex ? 'Correct!' : timedOut ? "Time's up!" : 'Not quite.'}</strong> {q.explanation}
           </span>
         </div>
       )}

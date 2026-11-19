@@ -1,5 +1,6 @@
 // Thin wrapper around the Gemini REST API.
-// Every feature (summary, flashcards, quiz, explain) asks the model for JSON.
+// Study features (summary, flashcards, quiz, explain) ask the model for JSON;
+// the study assistant chat uses plain text.
 
 const MODEL = 'gemini-2.5-flash';
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -25,7 +26,8 @@ function parseJson(raw) {
   }
 }
 
-async function generateJson(prompt, apiKey) {
+// Sends one request and returns the text of the answer.
+async function callGemini(body, apiKey) {
   if (!apiKey) {
     throw new AiError('Add your Gemini API key in Settings to use AI features.', 'NO_API_KEY');
   }
@@ -35,10 +37,7 @@ async function generateJson(prompt, apiKey) {
     res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
-      }),
+      body: JSON.stringify(body),
     });
   } catch {
     throw new AiError('Network error. Check your internet connection and try again.', 'NETWORK');
@@ -66,6 +65,17 @@ async function generateJson(prompt, apiKey) {
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
   if (!text) throw new AiError('The AI returned an empty answer. Please try again.');
+  return text;
+}
+
+async function generateJson(prompt, apiKey) {
+  const text = await callGemini(
+    {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
+    },
+    apiKey,
+  );
   return parseJson(text);
 }
 
@@ -181,4 +191,28 @@ ${trimMaterial(text)}
   const data = await generateJson(prompt, apiKey);
   if (!data.explanation) throw new AiError('The AI answer was incomplete. Please try again.', 'BAD_JSON');
   return { concept, explanation: data.explanation, example: data.example || '', remember: data.remember || '' };
+}
+
+// ---------- 5. Study assistant chat ----------
+const TUTOR_PROMPT = `You are StudyFlow's friendly study assistant for college students.
+- Answer clearly and briefly (under 150 words unless the student asks for more) in simple language.
+- Use short bullet points when they help. Give a small example when explaining a concept.
+- If study material is provided, prefer it over general knowledge.
+- If the question is not about studying or learning, politely steer the conversation back to studying.`;
+
+// `history` is a list of { role: 'user' | 'assistant', text }. The last item must be the student's message.
+export async function chatWithTutor(history, apiKey, material = null) {
+  const context = material
+    ? `\n\nThe student is studying "${material.title}". Use this study material when it is relevant:\n"""\n${material.text.slice(0, 12000)}\n"""`
+    : '';
+
+  const text = await callGemini(
+    {
+      systemInstruction: { parts: [{ text: TUTOR_PROMPT + context }] },
+      contents: history.slice(-12).map((m) => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] })),
+      generationConfig: { temperature: 0.6 },
+    },
+    apiKey,
+  );
+  return text.trim();
 }

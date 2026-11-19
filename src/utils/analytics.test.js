@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateTopics, buildAttempt, getNextSteps, getOverallStats, getScoreTrend, getWeakTopics, toTopicList, WEAK_THRESHOLD } from './analytics.js';
+import { aggregateTopics, buildAttempt, formatDuration, getNextSteps, getOverallStats, getScoreTrend, getWeakTopics, toTopicList, WEAK_THRESHOLD } from './analytics.js';
 
 const questions = [
   { question: 'q1', options: ['a', 'b', 'c', 'd'], answerIndex: 0, topic: 'Alpha' },
@@ -41,9 +41,34 @@ describe('buildAttempt', () => {
     });
   });
 
+  it('counts an unanswered question (timer ran out) as wrong', () => {
+    const attempt = buildAttempt(questions, [0, null, 2, null]);
+    expect(attempt.score).toBe(2);
+    expect(attempt.topics.Alpha).toEqual({ correct: 1, total: 2 });
+    expect(attempt.topics.Beta).toEqual({ correct: 1, total: 2 });
+  });
+
+  it('stores how long the quiz took', () => {
+    expect(buildAttempt(questions, [0, 1, 2, 3], 95).seconds).toBe(95);
+    expect(buildAttempt(questions, [0, 1, 2, 3]).seconds).toBeNull();
+  });
+
   it('handles a perfect and a zero score', () => {
     expect(buildAttempt(questions, [0, 1, 2, 3]).percent).toBe(100);
     expect(buildAttempt(questions, [3, 3, 3, 0]).percent).toBe(0);
+  });
+});
+
+describe('formatDuration', () => {
+  it('formats seconds as m:ss', () => {
+    expect(formatDuration(0)).toBe('0:00');
+    expect(formatDuration(9)).toBe('0:09');
+    expect(formatDuration(75)).toBe('1:15');
+    expect(formatDuration(600)).toBe('10:00');
+  });
+
+  it('never goes negative', () => {
+    expect(formatDuration(-5)).toBe('0:00');
   });
 });
 

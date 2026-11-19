@@ -11,11 +11,11 @@ import { generateFlashcards, generateQuiz, generateSummary } from '../services/g
 import { formatDate, wordCount } from '../utils/analytics.js';
 
 const TABS = [
-  { id: 'summary', label: 'Summary' },
-  { id: 'flashcards', label: 'Flashcards' },
-  { id: 'quiz', label: 'Quiz' },
-  { id: 'explain', label: 'Explain' },
-  { id: 'videos', label: 'Videos' },
+  { id: 'summary', label: 'Summary', icon: 'list' },
+  { id: 'flashcards', label: 'Flashcards', icon: 'layers' },
+  { id: 'quiz', label: 'Quiz', icon: 'target' },
+  { id: 'explain', label: 'Explain', icon: 'sparkle' },
+  { id: 'videos', label: 'Videos', icon: 'play' },
 ];
 
 const LOADING_TEXT = {
@@ -90,10 +90,13 @@ export default function MaterialView() {
       <div className="tabs" role="tablist">
         {TABS.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab${tab === t.id ? ' active' : ''}`} onClick={() => setParams({ tab: t.id })}>
+            <Icon name={t.icon} size={16} />
             {t.label}
           </button>
         ))}
       </div>
+
+      <div key={tab} className="fade-in">
 
       {tab === 'summary' &&
         (material.summary ? (
@@ -180,6 +183,7 @@ export default function MaterialView() {
       {tab === 'explain' && <ExplainTab material={material} />}
 
       {tab === 'videos' && <VideosTab material={material} />}
+      </div>
     </div>
   );
 }

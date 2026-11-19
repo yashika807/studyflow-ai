@@ -1,18 +1,30 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { clearAllData, loadApiKey, loadMaterials, saveApiKey, saveMaterials } from '../services/storage.js';
+import { clearUserData, loadApiKey, loadEvents, loadMaterials, saveApiKey, saveEvents, saveMaterials } from '../services/storage.js';
+import { useAuth } from './AuthContext.jsx';
 
 const StudyContext = createContext(null);
 
-// Global app state: the list of study materials (with their summary, flashcards,
-// quiz and attempts) plus the Gemini API key. Everything is mirrored to localStorage.
+const eventKey = (e) => `${e.title.trim().toLowerCase()}|${e.date}|${e.time || ''}`;
+
+// Global app state for the logged-in user: study materials (with summary, flashcards,
+// quiz and attempts), calendar events and the Gemini API key. Mirrored to localStorage.
 export function StudyProvider({ children }) {
-  const [materials, setMaterials] = useState(loadMaterials);
+  const { user } = useAuth();
+  const userId = user.id;
+
+  const [materials, setMaterials] = useState(() => loadMaterials(userId));
+  const [events, setEvents] = useState(() => loadEvents(userId));
   const [apiKey, setApiKeyState] = useState(loadApiKey);
 
   useEffect(() => {
-    saveMaterials(materials);
-  }, [materials]);
+    saveMaterials(userId, materials);
+  }, [userId, materials]);
 
+  useEffect(() => {
+    saveEvents(userId, events);
+  }, [userId, events]);
+
+  // ----- materials -----
   const addMaterial = useCallback((data) => {
     const material = {
       id: crypto.randomUUID(),
@@ -49,19 +61,56 @@ export function StudyProvider({ children }) {
     );
   }, []);
 
+  // ----- calendar events -----
+  // Adds events that are not already on the calendar and returns how many were new.
+  const addEvents = useCallback(
+    (incoming) => {
+      const seen = new Set(events.map(eventKey));
+      const fresh = [];
+      incoming.forEach((e) => {
+        const key = eventKey(e);
+        if (seen.has(key)) return;
+        seen.add(key);
+        fresh.push({ id: crypto.randomUUID(), title: e.title.trim(), date: e.date, time: e.time || '', source: e.source || 'manual' });
+      });
+      if (fresh.length) setEvents((prev) => [...prev, ...fresh]);
+      return fresh.length;
+    },
+    [events],
+  );
+
+  const deleteEvent = useCallback((id) => {
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  // ----- settings -----
   const setApiKey = useCallback((key) => {
     saveApiKey(key);
     setApiKeyState(key);
   }, []);
 
   const resetAll = useCallback(() => {
-    clearAllData();
+    clearUserData(userId);
     setMaterials([]);
-  }, []);
+    setEvents([]);
+  }, [userId]);
 
   const value = useMemo(
-    () => ({ materials, apiKey, addMaterial, updateMaterial, deleteMaterial, addAttempt, setCardKnown, setApiKey, resetAll }),
-    [materials, apiKey, addMaterial, updateMaterial, deleteMaterial, addAttempt, setCardKnown, setApiKey, resetAll],
+    () => ({
+      materials,
+      events,
+      apiKey,
+      addMaterial,
+      updateMaterial,
+      deleteMaterial,
+      addAttempt,
+      setCardKnown,
+      addEvents,
+      deleteEvent,
+      setApiKey,
+      resetAll,
+    }),
+    [materials, events, apiKey, addMaterial, updateMaterial, deleteMaterial, addAttempt, setCardKnown, addEvents, deleteEvent, setApiKey, resetAll],
   );
 
   return <StudyContext.Provider value={value}>{children}</StudyContext.Provider>;

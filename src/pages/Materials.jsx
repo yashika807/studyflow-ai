@@ -42,20 +42,33 @@ export default function Materials() {
             const best = m.attempts.length ? Math.max(...m.attempts.map((a) => a.percent)) : null;
             return (
               <article key={m.id} className="card material-card">
-                <div>
-                  <h3>{m.title}</h3>
-                  <p className="muted small">
-                    {wordCount(m.text).toLocaleString()} words · added {formatDate(m.createdAt)}
-                  </p>
+                <div className="material-top">
+                  <span className="avatar" aria-hidden="true">
+                    {m.title.trim().charAt(0).toUpperCase() || '?'}
+                  </span>
+                  <div>
+                    <h3>{m.title}</h3>
+                    <p className="muted small">
+                      {wordCount(m.text).toLocaleString()} words · added {formatDate(m.createdAt)}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="chips">
                   <span className={`chip ${m.summary ? 'chip-done' : ''}`}>Summary</span>
                   <span className={`chip ${m.flashcards ? 'chip-done' : ''}`}>Flashcards</span>
                   <span className={`chip ${m.quiz ? 'chip-done' : ''}`}>Quiz</span>
+                  {(m.videos || []).length > 0 && <span className="chip chip-primary">{m.videos.length} video(s)</span>}
                 </div>
 
-                <p className="muted small">{best === null ? 'No quiz attempts yet' : `Best score: ${best}% · ${m.attempts.length} attempt(s)`}</p>
+                {best === null ? (
+                  <p className="muted small">No quiz attempts yet</p>
+                ) : (
+                  <p className="small">
+                    <span className={`chip ${best >= 80 ? 'chip-success' : best >= 60 ? 'chip-warn' : 'chip-danger'}`}>Best {best}%</span>{' '}
+                    <span className="muted">· {m.attempts.length} attempt(s)</span>
+                  </p>
+                )}
 
                 <div className="card-actions">
                   <Link to={`/materials/${m.id}`} className="btn btn-primary btn-sm">

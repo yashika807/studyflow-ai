@@ -11,8 +11,15 @@ export function wordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+// 75 -> "1:15"
+export function formatDuration(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 // Builds the per-topic stats of a single quiz run.
-export function buildAttempt(questions, answers) {
+// A missing answer (null, e.g. the timer ran out) counts as wrong.
+export function buildAttempt(questions, answers, seconds = null) {
   const topics = {};
   let score = 0;
 
@@ -30,6 +37,7 @@ export function buildAttempt(questions, answers) {
     score,
     total: questions.length,
     percent: Math.round((score / questions.length) * 100),
+    seconds,
     topics,
   };
 }

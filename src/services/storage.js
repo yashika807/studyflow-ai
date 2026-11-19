@@ -1,21 +1,52 @@
 // All data lives in the browser (localStorage) - no backend needed.
-const MATERIALS_KEY = 'studyflow.materials.v1';
+// Materials and calendar events are stored per user, so every account has its own data.
+const LEGACY_MATERIALS_KEY = 'studyflow.materials.v1'; // before accounts existed
 const API_KEY_KEY = 'studyflow.apiKey';
 
-export function loadMaterials() {
+const materialsKey = (userId) => `studyflow.materials.v1.${userId}`;
+const eventsKey = (userId) => `studyflow.events.v1.${userId}`;
+
+function read(key, fallback) {
   try {
-    const raw = localStorage.getItem(MATERIALS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
 
-export function saveMaterials(materials) {
+function write(key, value) {
   try {
-    localStorage.setItem(MATERIALS_KEY, JSON.stringify(materials));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch (err) {
     console.warn('Could not save to localStorage', err);
+  }
+}
+
+export const loadMaterials = (userId) => read(materialsKey(userId), []);
+export const saveMaterials = (userId, materials) => write(materialsKey(userId), materials);
+
+export const loadEvents = (userId) => read(eventsKey(userId), []);
+export const saveEvents = (userId, events) => write(eventsKey(userId), events);
+
+// Materials saved before login existed are handed to the first account that signs up.
+export function adoptLegacyData(userId) {
+  const legacy = read(LEGACY_MATERIALS_KEY, null);
+  if (!legacy) return;
+  write(materialsKey(userId), legacy);
+  try {
+    localStorage.removeItem(LEGACY_MATERIALS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearUserData(userId) {
+  try {
+    localStorage.removeItem(materialsKey(userId));
+    localStorage.removeItem(eventsKey(userId));
+  } catch (err) {
+    console.warn(err);
   }
 }
 
@@ -33,13 +64,5 @@ export function saveApiKey(key) {
     else localStorage.removeItem(API_KEY_KEY);
   } catch (err) {
     console.warn('Could not save API key', err);
-  }
-}
-
-export function clearAllData() {
-  try {
-    localStorage.removeItem(MATERIALS_KEY);
-  } catch (err) {
-    console.warn(err);
   }
 }

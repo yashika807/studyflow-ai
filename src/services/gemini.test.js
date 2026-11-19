@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AiError, explainConcept, generateFlashcards, generateQuiz, generateSummary } from './gemini.js';
+import { AiError, chatWithTutor, explainConcept, generateFlashcards, generateQuiz, generateSummary } from './gemini.js';
 
 // Builds a fake Gemini HTTP response whose text is the given payload.
 function geminiResponse(payload, { fenced = false, status = 200 } = {}) {
@@ -147,5 +147,44 @@ describe('explainConcept', () => {
   it('rejects an answer without an explanation', async () => {
     mockFetch(geminiResponse({ example: 'only example' }));
     await expect(explainConcept('notes', 'x', 'k')).rejects.toBeInstanceOf(AiError);
+  });
+});
+
+describe('chatWithTutor', () => {
+  it('sends the conversation with model/user roles and returns trimmed text', async () => {
+    const fn = mockFetch(geminiResponse('  Sure! Here you go.  '));
+    const reply = await chatWithTutor(
+      [
+        { role: 'user', text: 'Hi' },
+        { role: 'assistant', text: 'Hello!' },
+        { role: 'user', text: 'Explain RR scheduling' },
+      ],
+      'k',
+    );
+    expect(reply).toBe('Sure! Here you go.');
+
+    const body = JSON.parse(fn.mock.calls[0][1].body);
+    expect(body.contents.map((c) => c.role)).toEqual(['user', 'model', 'user']);
+    expect(body.contents[2].parts[0].text).toBe('Explain RR scheduling');
+    expect(body.generationConfig.responseMimeType).toBeUndefined(); // plain text, not JSON
+  });
+
+  it('adds the chosen material to the instructions', async () => {
+    const fn = mockFetch(geminiResponse('ok'));
+    await chatWithTutor([{ role: 'user', text: 'Summarise' }], 'k', { title: 'CPU Scheduling', text: 'Round Robin uses a time quantum.' });
+    const body = JSON.parse(fn.mock.calls[0][1].body);
+    expect(body.systemInstruction.parts[0].text).toContain('CPU Scheduling');
+    expect(body.systemInstruction.parts[0].text).toContain('time quantum');
+  });
+
+  it('only sends the most recent messages', async () => {
+    const fn = mockFetch(geminiResponse('ok'));
+    const long = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', text: `m${i}` }));
+    await chatWithTutor([...long, { role: 'user', text: 'last' }], 'k');
+    expect(JSON.parse(fn.mock.calls[0][1].body).contents).toHaveLength(12);
+  });
+
+  it('needs an API key', async () => {
+    await expect(chatWithTutor([{ role: 'user', text: 'hi' }], '')).rejects.toMatchObject({ code: 'NO_API_KEY' });
   });
 });
